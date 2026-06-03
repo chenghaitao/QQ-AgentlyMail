@@ -135,13 +135,13 @@ agently-cli message +read --id msg_xxx
 
 Step 1：
 ```bash
-agently-cli message +send --to alice@co.com --to bob@co.com --subject "Report" --body "见附件" --attachment ./report.pdf
+agently-cli message +send --to alice@example.com --to bob@example.com --subject "Report" --body "见附件" --attachment ./report.pdf
 ```
 → 拿到 ctk_xxx，展示 summary，**停下等用户许可**
 
 Step 3（用户许可后）：
 ```bash
-agently-cli message +send --to alice@co.com --to bob@co.com --subject "Report" --body "见附件" --attachment ./report.pdf --confirmation-token ctk_xxx
+agently-cli message +send --to alice@example.com --to bob@example.com --subject "Report" --body "见附件" --attachment ./report.pdf --confirmation-token ctk_xxx
 ```
 
 ### 下载附件
