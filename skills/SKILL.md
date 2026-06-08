@@ -24,8 +24,7 @@ npx skills add Tencent/AgentlyMail -g -y
 
 **第 3 步 — OAuth授权**
 
-- **WorkBuddy Agent**：直接前台运行登录命令，用户在浏览器中完成授权后，命令会自动退出。
-- **其他 Agent**：在后台运行此命令。它会输出一个授权 URL——提取该 URL 并发送给用户。**必须包含文案提示**：`请点击或复制以下链接在浏览器中完成授权：`。用户在浏览器中完成授权后，命令会自动退出。
+ **交互式长命令**：必须后台运行命令（background+pty），从 stdout/stderr 提取它输出的原始授权 URL 并发送给用户。**必须包含文案提示**：`请点击或复制以下链接在浏览器中完成授权：`。用户在浏览器中完成授权后，命令会自动退出。
 
 **URL 提取规则**：必须将 URL exactly as returned by the CLI 转发给用户，并把它视为不可修改的 opaque string；不要做 URL encode/decode，不要补 `%20`、空格或标点，不要重新拼接 query，不要改写成 Markdown link text，建议用只包含原始 URL 的代码块单独输出。
 
