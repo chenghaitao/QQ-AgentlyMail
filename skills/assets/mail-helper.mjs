@@ -107,10 +107,16 @@ function die(msg, code) {
 /**
  * 找到 agently-cli 的 JS 入口文件（run.js）。
  *
- * 策略：
- *   1. 通过 `which`/`where` 找 agently-cli 可执行文件
- *   2. 如果是 .cmd/shell wrapper，推导同目录下 node_modules 中的 run.js
- *   3. 如果找不到，尝试常见 npm global 安装位置
+ * 策略（按优先级）：
+ *   1. 直接探测常见 npm global 安装路径
+ *   2. 通过 `which`/`where` 找到 agently-cli wrapper → 推导 run.js
+ *   3. 通过 `npm prefix -g` 找到 npm global prefix → 推导 run.js
+ *
+ * v2.1.1 修复：Linux/nvm 下 Method 2 和 Method 3 都少拼了一层 `lib/` 目录。
+ *   - Method 2: which → .../v22.22.2/bin/agently-cli → dirname → bin/
+ *     拼接 bin/node_modules/... → 实际在 lib/node_modules/...
+ *   - Method 3: npm prefix -g → .../v22.22.2
+ *     拼接 node_modules/... → 实际在 lib/node_modules/...
  */
 function resolveAgentlyEntry() {
   // Method 1: Check common npm global paths for the actual Node.js entry
@@ -119,7 +125,6 @@ function resolveAgentlyEntry() {
   if (process.platform === 'win32') {
     const home = process.env.USERPROFILE || '';
     const localAppData = process.env.LOCALAPPDATA || '';
-    // npm global install path
     candidates.push(
       resolve(home, 'AppData', 'Roaming', 'npm', 'node_modules', '@tencent-qqmail', 'agently-cli', 'scripts', 'run.js'),
       resolve(localAppData, 'npm', 'node_modules', '@tencent-qqmail', 'agently-cli', 'scripts', 'run.js'),
@@ -137,6 +142,10 @@ function resolveAgentlyEntry() {
   }
 
   // Method 2: Try which/where and derive the script path
+  // The wrapper lives at <prefix>/bin/agently-cli (symlink) or <prefix>/agently-cli.cmd (Windows).
+  // The actual Node.js package is at <prefix>/lib/node_modules/@tencent-qqmail/agently-cli/.
+  // On nvm, <prefix> = .../v22.22.2, so the run.js is at:
+  //   .../v22.22.2/lib/node_modules/@tencent-qqmail/agently-cli/scripts/run.js
   const whichCmd = process.platform === 'win32' ? 'where' : 'which';
   try {
     const r = spawnSync(whichCmd, ['agently-cli'], { shell: true, encoding: 'utf-8', timeout: 3000 });
@@ -145,20 +154,46 @@ function resolveAgentlyEntry() {
       if (paths.length > 0) {
         const wrapperPath = paths[0];
         const wrapperDir = dirname(wrapperPath);
-        // Derive: .../npm/agently-cli(.cmd) → .../npm/node_modules/@tencent-qqmail/agently-cli/scripts/run.js
-        const derived = resolve(wrapperDir, 'node_modules', '@tencent-qqmail', 'agently-cli', 'scripts', 'run.js');
-        if (existsSync(derived)) return derived;
+
+        // Strategy: walk up from wrapperDir and try known layouts.
+        const derivedCandidates = [];
+        const agentlyRel = ['@tencent-qqmail', 'agently-cli', 'scripts', 'run.js'];
+
+        // Layout A (nvm / standard Unix): wrapperDir = <prefix>/bin/ → lib/ is one dir up
+        //   e.g. .../v22.22.2/bin/ → .../v22.22.2/lib/node_modules/...
+        derivedCandidates.push(resolve(wrapperDir, '..', 'lib', 'node_modules', ...agentlyRel));
+
+        // Layout B (Windows .cmd in npm/): wrapperDir = %APPDATA%/npm/ → node_modules is sibling
+        if (process.platform === 'win32') {
+          derivedCandidates.push(resolve(wrapperDir, 'node_modules', ...agentlyRel));
+        }
+
+        // Layout C (some flat installs): wrapper in a .bin/ dir, package two levels up under node_modules
+        derivedCandidates.push(resolve(wrapperDir, '..', '..', 'node_modules', ...agentlyRel));
+
+        for (const c of derivedCandidates) {
+          if (existsSync(c)) return c;
+        }
       }
     }
   } catch {}
 
   // Method 3: Try resolving from npm prefix
+  // npm prefix -g returns the root prefix (e.g. .../v22.22.2 on nvm, /usr/local on system).
+  // The packages live at <prefix>/lib/node_modules/.
   try {
     const r = spawnSync('npm', ['prefix', '-g'], { encoding: 'utf-8', timeout: 5000 });
     if (r.status === 0) {
       const prefix = r.stdout.trim();
-      const derived = resolve(prefix, 'node_modules', '@tencent-qqmail', 'agently-cli', 'scripts', 'run.js');
-      if (existsSync(derived)) return derived;
+      const agentlyRel = ['@tencent-qqmail', 'agently-cli', 'scripts', 'run.js'];
+
+      // Layout A: standard <prefix>/lib/node_modules/... (nvm, most Unix)
+      const withLib = resolve(prefix, 'lib', 'node_modules', ...agentlyRel);
+      if (existsSync(withLib)) return withLib;
+
+      // Layout B: flat <prefix>/node_modules/... (some custom setups, Windows)
+      const flat = resolve(prefix, 'node_modules', ...agentlyRel);
+      if (existsSync(flat)) return flat;
     }
   } catch {}
 
